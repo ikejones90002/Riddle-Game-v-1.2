@@ -226,11 +226,17 @@ if mode == "Solve a riddle":
                 if is_correct:
                     st.session_state.score += 1
                     st.success("🎉 That's correct! Great job!")
-                    st.audio(SOUND_SUCCESS)
+                    st.markdown(
+                        f'<audio src="{SOUND_SUCCESS}" autoplay="true"></audio>',
+                        unsafe_allow_html=True
+                    )
                     st.balloons()
                 else:
                     st.error("❌ Hmm... that's not quite right. Want a hint?")
-                    st.audio(SOUND_FAILURE)
+                    st.markdown(
+                        f'<audio src="{SOUND_FAILURE}" autoplay="true"></audio>',
+                        unsafe_allow_html=True
+                    )
 
         with col2:
             if st.button("💡 Hint"):
