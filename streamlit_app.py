@@ -55,7 +55,7 @@ def ask_hugging_face(prompt, model=DEFAULT_LLM):
             "parameters": {"max_new_tokens": 200, "temperature": 0.7}
         }
         response = requests.post(
-            f"https://api-inference.huggingface.co/models/{model}",
+            f"https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-3B-Instruct",
             headers=headers,
             json=payload,
             timeout=30
