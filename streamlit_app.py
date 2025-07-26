@@ -61,7 +61,16 @@ def ask_hugging_face(prompt, model=DEFAULT_LLM):
             timeout=30
         )
         response.raise_for_status()
-        return response.json()[0]["generated_text"].strip()
+        result = response.json()
+        # Handle both list and dict responses
+        if isinstance(result, list) and "generated_text" in result[0]:
+            return result[0]["generated_text"].strip()
+        elif isinstance(result, dict) and "generated_text" in result:
+            return result["generated_text"].strip()
+        elif isinstance(result, dict) and "text" in result:
+            return result["text"].strip()
+        else:
+            return "⚠️ Unexpected response format from Hugging Face API."
     except requests.exceptions.RequestException as e:
         return f"⚠️ Could not connect to Hugging Face AI: {str(e)}. Please check your network connection."
     except Exception as e:
