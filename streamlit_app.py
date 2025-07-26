@@ -10,7 +10,7 @@ TRANSLATION_MODELS = {
     "es": "Helsinki-NLP/opus-mt-en-es",
     "fr": "Helsinki-NLP/opus-mt-en-fr",
 }
-DEFAULT_LLM = "meta-llama/Llama-3.2-3B-Instruct"
+DEFAULT_LLM = "google/flan-t5-large"
 
 # Sound effects
 SOUND_SUCCESS = "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
@@ -55,7 +55,7 @@ def ask_hugging_face(prompt, model=DEFAULT_LLM):
             "parameters": {"max_new_tokens": 200, "temperature": 0.7}
         }
         response = requests.post(
-            f"https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-3B-Instruct",
+            f"https://api-inference.huggingface.co/models/google/flan-t5-large",
             headers=headers,
             json=payload,
             timeout=30
