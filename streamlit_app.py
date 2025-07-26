@@ -1,5 +1,5 @@
-import streamlit as st # type: ignore
-import requests # type: ignore
+import streamlit as st  # type: ignore
+import requests  # type: ignore
 import random
 
 # -------------------------------
@@ -15,7 +15,6 @@ DEFAULT_LLM = "meta-llama/Llama-3.2-3B-Instruct"
 # Sound effects
 SOUND_SUCCESS = "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
 SOUND_FAILURE = "https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg"
-
 
 # -------------------------------
 # Riddles Dataset (Static)
@@ -41,12 +40,12 @@ riddles = {
 @st.cache_data
 def ask_hugging_face(prompt, model=DEFAULT_LLM):
     # Securely access the API key from Streamlit secrets
-    if "huggingface_api_key" not in st.secrets:
-        st.error("Hugging Face API key not found. Please add it to your Streamlit secrets.")
+    if "huggingface" not in st.secrets or "api_key" not in st.secrets["huggingface"]:
+        st.error("Hugging Face API key not found. Please add it under [huggingface] in Streamlit secrets.")
         return "⚠️ AI features are disabled. Please configure the API key."
 
     try:
-        api_key = st.secrets["huggingface_api_key"]
+        api_key = st.secrets["huggingface"]["api_key"]
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -97,7 +96,7 @@ def generate_riddle(level):
 # -------------------------------
 def translate_riddle(riddle, language="es"):
     if language not in TRANSLATION_MODELS:
-        return riddle  # Return original if no translation model is available
+        return riddle
     model = TRANSLATION_MODELS[language]
     prompt = f"Translate this riddle to {language}: {riddle['question']}"
     translated_question = ask_hugging_face(prompt, model)
@@ -126,22 +125,21 @@ st.set_page_config(page_title="Avery's Riddle Me This?", page_icon="🧠")
 # -------------------------------
 # Session State Initialization
 # -------------------------------
-if 'riddle' not in st.session_state:
-    st.session_state.riddle = None
-if 'score' not in st.session_state:
-    st.session_state.score = 0
-if 'attempts' not in st.session_state:
-    st.session_state.attempts = 0
-if 'language' not in st.session_state:
-    st.session_state.language = "en"
-if 'conversation_history' not in st.session_state:
-    st.session_state.conversation_history = []
+for key, default in {
+    'riddle': None,
+    'score': 0,
+    'attempts': 0,
+    'language': "en",
+    'conversation_history': []
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 # -------------------------------
 # Sidebar
 # -------------------------------
 with st.sidebar:
-    st.image("logo.jpg", width=150)  # Compressed for faster loading
+    st.image("logo.jpg", width=150)
     st.title("📜 Game Info")
 
     st.subheader("🎯 Rules")
@@ -207,6 +205,7 @@ if st.button("🎲 New Riddle"):
     st.session_state.conversation_history = []
 
 mode = st.radio("Choose a mode:", ["Solve a riddle", "Stump the AI with your own riddle", "Chat with AI"])
+
 if mode == "Solve a riddle":
     if st.session_state.riddle:
         st.subheader("🧩 Riddle:")
@@ -263,11 +262,9 @@ elif mode == "Chat with AI":
     user_chat = st.text_input("Type your message to the AI:")
     if st.button("📨 Send Message"):
         if user_chat.strip():
-            # Update conversation history
             st.session_state.conversation_history.append(f"User: {user_chat}")
             response = chat_with_ai(user_chat, "\n".join(st.session_state.conversation_history))
             st.session_state.conversation_history.append(f"AI: {response}")
-            # Display conversation
             for message in st.session_state.conversation_history:
                 st.markdown(message)
         else:
