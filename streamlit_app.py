@@ -1,6 +1,8 @@
 import streamlit as st  # type: ignore
 import requests  # type: ignore
 import random
+from gtts import gTTS
+import io
 
 # -------------------------------
 # Application Constants
@@ -282,6 +284,12 @@ elif mode == "Chat with AI":
             st.session_state.conversation_history.append(f"AI: {response}")
             for message in st.session_state.conversation_history:
                 st.markdown(message)
+            # Add AI Voice button
+            if st.button("🔊 Hear AI Response"):
+                tts = gTTS(text=response, lang='en')
+                mp3_fp = io.BytesIO()
+                tts.write_to_fp(mp3_fp)
+                st.audio(mp3_fp.getvalue(), format='audio/mp3')
         else:
             st.warning("Please type a message first!")
 
