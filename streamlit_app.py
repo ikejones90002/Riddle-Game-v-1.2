@@ -1,7 +1,7 @@
 import streamlit as st  # type: ignore
 import requests  # type: ignore
 import random
-from gtts import gTTS
+from gtts import gTTS # type: ignore
 import io
 
 # -------------------------------
