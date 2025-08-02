@@ -1,8 +1,6 @@
 import streamlit as st  # type: ignore
 import requests  # type: ignore
 import random
-from gtts import gTTS # type: ignore
-import io
 
 # -------------------------------
 # Application Constants
@@ -57,7 +55,7 @@ def ask_hugging_face(prompt, model=DEFAULT_LLM):
             "parameters": {"max_new_tokens": 200, "temperature": 0.7}
         }
         response = requests.post(
-            f"https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-3B-Instruct",
+            f"https://api-inference.huggingface.co/models/{model}",
             headers=headers,
             json=payload,
             timeout=30
@@ -286,10 +284,19 @@ elif mode == "Chat with AI":
                 st.markdown(message)
             # Add AI Voice button
             if st.button("🔊 Hear AI Response"):
-                tts = gTTS(text=response, lang='en')
-                mp3_fp = io.BytesIO()
-                tts.write_to_fp(mp3_fp)
-                st.audio(mp3_fp.getvalue(), format='audio/mp3')
+                st.markdown(
+                    f"""
+                    <script>
+                    function speakText() {{
+                        const utterance = new SpeechSynthesisUtterance("{response.replace('"', '\\"').replace('\n', ' ')}");
+                        utterance.lang = "{st.session_state.language}";
+                        speechSynthesis.speak(utterance);
+                    }}
+                    </script>
+                    <button onclick="speakText()">Play AI Response</button>
+                    """,
+                    unsafe_allow_html=True
+                )
         else:
             st.warning("Please type a message first!")
 

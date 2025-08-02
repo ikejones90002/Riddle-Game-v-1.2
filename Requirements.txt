@@ -1,6 +1,3 @@
-streamlit>=1.34.0
-requests
-gTTS==2.5.1
-pydub
-Pillow
+streamlit==1.38.0
+requests==2.32.3
 transformers
