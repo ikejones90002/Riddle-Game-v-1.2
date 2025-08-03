@@ -1,7 +1,5 @@
+torch==2.4.1 --extra-index-url https://download.pytorch.org/whl/cpu
 streamlit==1.38.0
 requests==2.32.3
-gTTS==2.5.3
 transformers==4.44.2
-torch==2.4.1+cpu
 accelerate==0.33.0
-pydub==0.25.1
