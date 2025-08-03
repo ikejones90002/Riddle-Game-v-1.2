@@ -1,8 +1,5 @@
 import streamlit as st
-import requests
 import random
-from functools import lru_cache
-import time
 
 # -------------------------------
 # Application Constants
@@ -17,186 +14,68 @@ LANGUAGES = {
     "Hindi": "hi",
     "Thai": "th"
 }
-DEFAULT_LLM = "meta-llama/Llama-3.2-3B-Instruct"
-SOUND_SUCCESS = "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
-SOUND_FAILURE = "https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg"
 
 # -------------------------------
-# Riddles Dataset (Static)
+# Riddles Dataset
 # -------------------------------
 riddles = {
     "Easy": [
         {"question": "What has hands but can’t clap?", "answer": "a clock"},
-        {"question": "What has to be broken before you can use it?", "answer": "an egg"}
+        {"question": "What has to be broken before you can use it?", "answer": "an egg"},
+        {"question": "What has a neck but no head?", "answer": "a shirt"},
+        {"question": "What can run but never walks?", "answer": "water"}
     ],
     "Medium": [
         {"question": "What gets wetter the more it dries?", "answer": "a towel"},
-        {"question": "What has one eye but can’t see?", "answer": "a needle"}
+        {"question": "What has one eye but can’t see?", "answer": "a needle"},
+        {"question": "What has keys but can’t open locks?", "answer": "a piano"},
+        {"question": "What can travel around the world while staying in a corner?", "answer": "a stamp"}
     ],
     "Hard": [
         {"question": "The more you take, the more you leave behind. What am I?", "answer": "footsteps"},
-        {"question": "What comes once in a minute, twice in a moment, but never in a thousand years?", "answer": "the letter m"}
+        {"question": "What comes once in a minute, twice in a moment, but never in a thousand years?", "answer": "the letter m"},
+        {"question": "I speak without a mouth and hear without ears. What am I?", "answer": "an echo"},
+        {"question": "What has a heart that doesn’t beat?", "answer": "an artichoke"}
     ]
 }
 
 # -------------------------------
-# Safety Check
-# -------------------------------
-def check_safety(text, is_input=True):
-    prompt = f"""
-    You are Llama Guard, a safety classifier. Determine if the following {'user input' if is_input else 'AI output'} is safe for a children's riddle game. Return 'safe' or 'unsafe'.
-    Text: {text}
-    """
-    result = ask_hugging_face(prompt, model="meta-llama/Llama-Guard-3-8B")
-    return result.strip().lower() == "safe"
-
-# -------------------------------
-# Hugging Face API Function
-# -------------------------------
-@lru_cache(maxsize=100)
-def ask_hugging_face(prompt, model=DEFAULT_LLM):
-    if "huggingface" not in st.secrets or "api_key" not in st.secrets["huggingface"]:
-        st.error("Hugging Face API key not found. Please add it under [huggingface] in Streamlit secrets.")
-        return "⚠️ AI features are disabled. Please configure the API key."
-
-    api_key = st.secrets["huggingface"]["api_key"]
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "inputs": prompt,
-        "parameters": {
-            "max_new_tokens": 200,
-            "temperature": 0.7,
-            "top_p": 0.9,
-            "return_full_text": False
-        }
-    }
-    
-    for attempt in range(3):
-        try:
-            response = requests.post(
-                f"https://api-inference.huggingface.co/models/{model}",
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-            response.raise_for_status()
-            result = response.json()
-            
-            if isinstance(result, list) and result and "generated_text" in result[0]:
-                return result[0]["generated_text"].strip()
-            elif isinstance(result, dict) and "generated_text" in result:
-                return result["generated_text"].strip()
-            elif isinstance(result, dict) and "text" in result:
-                return result["text"].strip()
-            elif isinstance(result, dict) and "error" in result:
-                return f"⚠️ API Error: {result['error']}"
-            else:
-                return "⚠️ Unexpected response format from Hugging Face API."
-        except requests.exceptions.RequestException as e:
-            if attempt < 2:
-                time.sleep(2 ** attempt)
-                continue
-            return f"⚠️ Could not connect to Hugging Face AI: {str(e)}. Please try again later."
-        except Exception as e:
-            return f"⚠️ An error occurred with the Hugging Face AI: {str(e)}."
-
-# -------------------------------
-# Conversational AI Function
-# -------------------------------
-def chat_with_ai(user_input, conversation_history):
-    if not check_safety(user_input):
-        return "⚠️ Sorry, that input isn't safe for this game! Try something else! 😊"
-    
-    # Define possible AI "personalities" for variety
-    personalities = [
-        {"name": "Riddle Wizard", "tone": "magical and mysterious", "emoji": "🧙‍♂️"},
-        {"name": "Puzzle Pal", "tone": "cheerful and encouraging", "emoji": "😄"},
-        {"name": "Brainy Buddy", "tone": "smart and curious", "emoji": "🧠"}
-    ]
-    personality = random.choice(personalities)
-    
-    # Categorize user input for response type
-    user_input_lower = user_input.lower().strip()
-    response_type = "general"
-    if any(word in user_input_lower for word in ["hint", "help", "clue"]):
-        response_type = "hint"
-    elif any(word in user_input_lower for word in ["why", "what", "how"]):
-        response_type = "explanation"
-    elif any(word in user_input_lower for word in ["good", "great", "awesome"]):
-        response_type = "encouragement"
-    
-    # Build dynamic prompt based on response type
-    riddle = st.session_state.riddle['question'] if st.session_state.riddle else "No riddle selected"
-    prompt = f"""
-    You are {personality['name']}, a friendly AI assistant for a kids' riddle game called 'Avery's Riddle Me This?'. 
-    Respond in a {personality['tone']} tone, using emojis like {personality['emoji']} and keeping answers short (1-2 sentences). 
-    The current riddle is: '{riddle}'.
-    The conversation so far: {conversation_history}
-    User: {user_input}
-    
-    Based on the user's input:
-    - If they ask for a hint or help, give a short clue about the riddle.
-    - If they ask a question (e.g., why, what, how), explain something fun related to the riddle or game.
-    - If they say something positive (e.g., good, awesome), respond with encouragement.
-    - Otherwise, reply with a fun, engaging comment related to the riddle or game.
-    
-    AI: """
-    
-    response = ask_hugging_face(prompt)
-    if not check_safety(response, is_input=False):
-        return "⚠️ Oops, my response got a bit too wild! Let's try something else! 😊"
-    
-    # Append emoji based on personality
-    return f"{response} {personality['emoji']}"
-
-# -------------------------------
-# Dynamic Riddle Generation
+# Static Functions
 # -------------------------------
 def generate_riddle(level):
-    prompt = f"Generate a {level.lower()}-difficulty riddle for kids. Provide the riddle as a question and the answer separately, formatted as: Question: [riddle] Answer: [answer]. Keep it short and fun."
-    response = ask_hugging_face(prompt)
-    if not check_safety(response, is_input=False):
-        return random.choice(riddles[level])
-    try:
-        question = response.split("Answer:")[0].replace("Question:", "").strip()
-        answer = response.split("Answer:")[1].strip()
-        return {"question": question, "answer": answer}
-    except IndexError:
-        return random.choice(riddles[level])
+    """Select a random riddle from the static dataset."""
+    return random.choice(riddles[level])
 
-# -------------------------------
-# Translate Riddle
-# -------------------------------
 def translate_riddle(riddle, language="es"):
-    if language == "en":
-        return riddle
-    prompt = f"""
-    Translate the following riddle question to {language}. Keep the tone fun and child-friendly. Only translate the question, not the answer.
-    Riddle: {riddle['question']}
-    """
-    translated_question = ask_hugging_face(prompt)
-    if not check_safety(translated_question, is_input=False):
-        return riddle
-    return {"question": translated_question, "answer": riddle["answer"]}
+    """Static version: Return the riddle as-is (no translation)."""
+    return riddle
 
-# -------------------------------
-# AI Answer Evaluator
-# -------------------------------
 def evaluate_answer(user_input, riddle_question, correct_answer):
-    if not check_safety(user_input):
-        return False
-    prompt = f"""
-    A child is solving a riddle.
-    The riddle is: '{riddle_question}'
-    The correct answer (in English) is: '{correct_answer}'.
-    The child's answer is: '{user_input}'.
-    Is the child's answer essentially correct, even if it's in a different language from the answer? Respond only with 'Yes' or 'No'.
-    """
-    reply = ask_hugging_face(prompt).strip().lower()
-    return "yes" in reply
+    """Check if the user's answer matches the correct answer (case-insensitive)."""
+    return user_input.lower().strip() == correct_answer.lower().strip()
+
+def chat_with_ai(user_input, conversation_history):
+    """Generate static AI responses based on user input."""
+    user_input_lower = user_input.lower().strip()
+    riddle = st.session_state.riddle['question'] if st.session_state.riddle else "No riddle selected"
+    personalities = [
+        {"name": "Riddle Wizard", "emoji": "🧙‍♂️"},
+        {"name": "Puzzle Pal", "emoji": "😄"},
+        {"name": "Brainy Buddy", "emoji": "🧠"}
+    ]
+    personality = random.choice(personalities)
+
+    # Predefined responses based on input type
+    if any(word in user_input_lower for word in ["hint", "help", "clue"]):
+        return f"Think about the key words in the riddle: {riddle}! {personality['emoji']}"
+    elif any(word in user_input_lower for word in ["why", "what", "how"]):
+        return f"That’s a great question! Focus on the clues in: {riddle}! {personality['emoji']}"
+    elif any(word in user_input_lower for word in ["good", "great", "awesome"]):
+        return f"You’re a riddle superstar! Keep it up! {personality['emoji']}"
+    elif any(word in user_input_lower for word in ["riddle", "game", "fun"]):
+        return f"This riddle game is a blast! Try guessing: {riddle}! {personality['emoji']}"
+    else:
+        return f"Let’s keep puzzling! What’s your next guess for: {riddle}? {personality['emoji']}"
 
 # -------------------------------
 # Streamlit App Config
@@ -217,13 +96,12 @@ for key, default in {
     if key not in st.session_state:
         st.session_state[key] = default
 
-# Preload riddles
+# Preload riddles into the pool
 if not st.session_state.riddle_pool["Easy"]:
     for level in riddles:
         for _ in range(3):
             riddle = generate_riddle(level)
-            if riddle:
-                st.session_state.riddle_pool[level].append(riddle)
+            st.session_state.riddle_pool[level].append(riddle)
 
 # -------------------------------
 # Sidebar
@@ -231,14 +109,12 @@ if not st.session_state.riddle_pool["Easy"]:
 with st.sidebar:
     st.image("logo.jpg", width=150)
     st.title("📜 Game Info")
-
     st.subheader("🎯 Rules")
     st.markdown("""
     - Solve riddles or chat with the AI.
     - One answer per try.
     - Ask for hints or talk to the AI if stuck.
     """)
-
     st.subheader("🕹️ How to Play")
     st.markdown("""
     1. Choose a level  
@@ -247,24 +123,19 @@ with st.sidebar:
     4. Submit answers or ask questions  
     5. Score points for correct answers!
     """)
-
     st.subheader("💡 Hints")
     st.markdown("""
     - Think about keywords.  
     - Break it down.  
     - Ask the AI for help! 😊
     """)
-
     st.subheader("📈 Progress")
     st.markdown(f"**Score:** {st.session_state.score} / {st.session_state.attempts}")
-
     if st.button("🔄 Reset Progress"):
         st.session_state.score = 0
         st.session_state.attempts = 0
         st.session_state.conversation_history = []
-        ask_hugging_face.cache_clear()
         st.success("Progress reset!")
-
     st.subheader("🌐 Language")
     lang_options = list(LANGUAGES.keys())
     lang_codes = list(LANGUAGES.values())
@@ -288,10 +159,7 @@ if st.button("🎲 New Riddle"):
         st.session_state.riddle = random.choice(st.session_state.riddle_pool[level])
     else:
         st.session_state.riddle = generate_riddle(level)
-        if not st.session_state.riddle:
-            st.session_state.riddle = random.choice(riddles[level])
-        else:
-            st.session_state.riddle_pool[level].append(st.session_state.riddle)
+        st.session_state.riddle_pool[level].append(st.session_state.riddle)
     if st.session_state.language != "en":
         st.session_state.riddle = translate_riddle(st.session_state.riddle, st.session_state.language)
     st.session_state.last_result = None
@@ -303,9 +171,7 @@ if mode == "Solve a riddle":
     if st.session_state.riddle:
         st.subheader("🧩 Riddle:")
         st.write(st.session_state.riddle["question"])
-
         user_input = st.text_input("🔤 Type your answer:")
-
         col1, col2, col3 = st.columns(3)
         with col1:
             if st.button("✅ Submit Answer"):
@@ -315,52 +181,36 @@ if mode == "Solve a riddle":
                     st.session_state.riddle["question"],
                     st.session_state.riddle["answer"]
                 )
-
                 if is_correct:
                     st.session_state.score += 1
                     st.success("🎉 That's correct! Great job!")
                     st.markdown(
-                        f'<audio src="{SOUND_SUCCESS}" autoplay="true"></audio>',
+                        f'<audio src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg" autoplay="true"></audio>',
                         unsafe_allow_html=True
                     )
                     st.balloons()
                 else:
                     st.error("❌ Hmm... that's not quite right. Want a hint?")
                     st.markdown(
-                        f'<audio src="{SOUND_FAILURE}" autoplay="true"></audio>',
+                        f'<audio src="https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg" autoplay="true"></audio>',
                         unsafe_allow_html=True
                     )
-
         with col2:
             if st.button("💡 Hint"):
-                hint_level = "simple" if st.session_state.attempts < 3 else "detailed"
-                prompt = f"Provide a {hint_level} hint for this riddle: {st.session_state.riddle['question']}. Keep it short and child-friendly."
-                hint = ask_hugging_face(prompt)
-                if not check_safety(hint, is_input=False):
-                    hint = "Think carefully about the words in the riddle! 😊"
+                hint = f"Think carefully about the words in the riddle: {st.session_state.riddle['question']}!"
                 st.info(f"🧠 Hint: {hint}")
-
         with col3:
             if st.button("🤖 Ask the AI for help"):
-                prompt = f"Help a child solve this riddle:\n\nRiddle: {st.session_state.riddle['question']}\n\nThey guessed: '{user_input}'. How should I help them?"
-                ai_help = ask_hugging_face(prompt)
-                if not check_safety(ai_help, is_input=False):
-                    ai_help = "Let's think about the riddle together! What's a key word in it? 😊"
-                st.markdown(f"**AI says:** {ai_help}")
+                response = chat_with_ai(user_input, "\n".join(st.session_state.conversation_history))
+                st.markdown(f"**AI says:** {response}")
 
 elif mode == "Stump the AI with your own riddle":
     st.subheader("🧙 Challenge the AI")
     custom_riddle = st.text_area("✍️ Type your own riddle for the AI:")
     if st.button("🤔 What’s your answer, AI?"):
         if custom_riddle.strip():
-            if not check_safety(custom_riddle):
-                st.warning("⚠️ That riddle isn't safe for this game! Try another one. 😊")
-            else:
-                prompt = f"A kid gave you this riddle. Try to solve it simply:\n\n{custom_riddle}"
-                ai_answer = ask_hugging_face(prompt)
-                if not check_safety(ai_answer, is_input=False):
-                    ai_answer = "Hmm, that's a tricky one! Can you give me another riddle? 😊"
-                st.markdown(f"**AI thinks:** {ai_answer}")
+            response = chat_with_ai(custom_riddle, "\n".join(st.session_state.conversation_history))
+            st.markdown(f"**AI thinks:** {response}")
         else:
             st.warning("Please type a riddle first!")
 
@@ -380,4 +230,4 @@ elif mode == "Chat with AI":
 
 st.markdown("---")
 st.markdown("🗣️ Solve riddles, stump the AI, or chat for fun in the modes above!")
-st.markdown("**Built with Meta Llama 3** | Created by ijones90002")
+st.markdown("**Built for Fun** | Created by ijones90002")
