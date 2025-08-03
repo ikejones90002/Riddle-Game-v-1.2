@@ -3,9 +3,6 @@ import requests
 import random
 from functools import lru_cache
 import time
-from gtts import gTTS
-import os
-import base64
 
 # -------------------------------
 # Application Constants
@@ -166,18 +163,6 @@ def evaluate_answer(user_input, riddle_question, correct_answer):
     """
     reply = ask_hugging_face(prompt).strip().lower()
     return "yes" in reply
-
-# -------------------------------
-# Text-to-Speech
-# -------------------------------
-def text_to_speech(text, lang="en"):
-    tts = gTTS(text=text, lang=lang, slow=False)
-    audio_file = "response.mp3"
-    tts.save(audio_file)
-    with open(audio_file, "rb") as f:
-        audio_bytes = f.read()
-    audio_b64 = base64.b64encode(audio_bytes).decode()
-    return f'<audio src="data:audio/mp3;base64,{audio_b64}" autoplay="true"></audio>'
 
 # -------------------------------
 # Streamlit App Config
@@ -356,11 +341,6 @@ elif mode == "Chat with AI":
             st.session_state.conversation_history.append(f"AI: {response}")
             for message in st.session_state.conversation_history:
                 st.markdown(message)
-            if st.button("🔊 Hear AI Response"):
-                if response:
-                    st.markdown(text_to_speech(response, st.session_state.language), unsafe_allow_html=True)
-                else:
-                    st.warning("No AI response to read aloud!")
         else:
             st.warning("Please type a message first!")
 
