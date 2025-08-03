@@ -17,9 +17,9 @@ LANGUAGES = {
     "Hindi": "hi",
     "Thai": "th"
 }
-DEFAULT_LLM = "mistralai/Mixtral-8x7B-Instruct-v0.1"
-FALLBACK_LLM = "facebook/bart-large"
-SAFETY_LLM = "meta-llama/Llama-3.2-3B-Instruct" # Optional for additional features
+DEFAULT_LLM = "meta-llama/Llama-3.2-3B-Instruct"
+SOUND_SUCCESS = "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
+SOUND_FAILURE = "https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg"
 
 # -------------------------------
 # Riddles Dataset (Static)
@@ -44,15 +44,11 @@ riddles = {
 # -------------------------------
 def check_safety(text, is_input=True):
     prompt = f"""
-    Check if the following {'user input' if is_input else 'AI output'} is appropriate for a children's riddle game (fun, friendly, no inappropriate content). Return 'safe' if appropriate, or 'unsafe' with a brief reason.
+    You are Llama Guard, a safety classifier. Determine if the following {'user input' if is_input else 'AI output'} is safe for a children's riddle game. Return 'safe' or 'unsafe'.
     Text: {text}
     """
-    result = ask_hugging_face(prompt, model=SAFETY_LLM)
-    st.write(f"Debug: Safety check for '{text}' (is_input={is_input}): {result}")
-    if result.startswith("⚠️"):
-        st.warning(f"Debug: Safety check failed due to API error: {result}")
-        return is_input  # Allow user input, block AI output if API fails
-    return result.strip().lower().startswith("safe")
+    result = ask_hugging_face(prompt, model="meta-llama/Llama-Guard-3-8B")
+    return result.strip().lower() == "safe"
 
 # -------------------------------
 # Hugging Face API Function
@@ -71,59 +67,41 @@ def ask_hugging_face(prompt, model=DEFAULT_LLM):
     payload = {
         "inputs": prompt,
         "parameters": {
-            "max_new_tokens": 30,  # Reduced to minimize rate limits
+            "max_new_tokens": 200,
             "temperature": 0.7,
             "top_p": 0.9,
             "return_full_text": False
         }
     }
     
-    models = [model, FALLBACK_LLM] if model == DEFAULT_LLM else [model]
-    for current_model in models:
+    for attempt in range(3):
         try:
             response = requests.post(
-                f"https://api-inference.huggingface.co/models/{current_model}",
+                f"https://api-inference.huggingface.co/models/{model}",
                 headers=headers,
                 json=payload,
-                timeout=10
+                timeout=30
             )
             response.raise_for_status()
             result = response.json()
             
             if isinstance(result, list) and result and "generated_text" in result[0]:
-                text = result[0]["generated_text"].strip()
-                st.write(f"Debug: API response from {current_model}: {text}")
-                return text
+                return result[0]["generated_text"].strip()
             elif isinstance(result, dict) and "generated_text" in result:
-                text = result["generated_text"].strip()
-                st.write(f"Debug: API response from {current_model}: {text}")
-                return text
+                return result["generated_text"].strip()
             elif isinstance(result, dict) and "text" in result:
-                text = result["text"].strip()
-                st.write(f"Debug: API response from {current_model}: {text}")
-                return text
+                return result["text"].strip()
             elif isinstance(result, dict) and "error" in result:
-                st.error(f"Debug: API Error for {current_model}: {result['error']}")
-                if current_model == models[-1]:
-                    return f"⚠️ API Error: {result['error']}"
-                continue
+                return f"⚠️ API Error: {result['error']}"
             else:
-                st.error(f"Debug: Unexpected API response format from {current_model}: {result}")
-                if current_model == models[-1]:
-                    return "⚠️ Unexpected response format from Hugging Face API."
-                continue
+                return "⚠️ Unexpected response format from Hugging Face API."
         except requests.exceptions.RequestException as e:
-            st.error(f"Debug: Failed to connect to Hugging Face API for {current_model}: {str(e)}")
-            if current_model == models[-1]:
-                return f"⚠️ Could not connect to Hugging Face AI: {str(e)}."
-            time.sleep(2)
-            continue
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            return f"⚠️ Could not connect to Hugging Face AI: {str(e)}. Please try again later."
         except Exception as e:
-            st.error(f"Debug: General error with Hugging Face API for {current_model}: {str(e)}")
-            if current_model == models[-1]:
-                return f"⚠️ An error occurred with the Hugging Face AI: {str(e)}."
-            continue
-    return "⚠️ All models failed."
+            return f"⚠️ An error occurred with the Hugging Face AI: {str(e)}."
 
 # -------------------------------
 # Conversational AI Function
@@ -132,6 +110,7 @@ def chat_with_ai(user_input, conversation_history):
     if not check_safety(user_input):
         return "⚠️ Sorry, that input isn't safe for this game! Try something else! 😊"
     
+    # Define possible AI "personalities" for variety
     personalities = [
         {"name": "Riddle Wizard", "tone": "magical and mysterious", "emoji": "🧙‍♂️"},
         {"name": "Puzzle Pal", "tone": "cheerful and encouraging", "emoji": "😄"},
@@ -139,6 +118,7 @@ def chat_with_ai(user_input, conversation_history):
     ]
     personality = random.choice(personalities)
     
+    # Categorize user input for response type
     user_input_lower = user_input.lower().strip()
     response_type = "general"
     if any(word in user_input_lower for word in ["hint", "help", "clue"]):
@@ -148,6 +128,7 @@ def chat_with_ai(user_input, conversation_history):
     elif any(word in user_input_lower for word in ["good", "great", "awesome"]):
         response_type = "encouragement"
     
+    # Build dynamic prompt based on response type
     riddle = st.session_state.riddle['question'] if st.session_state.riddle else "No riddle selected"
     prompt = f"""
     You are {personality['name']}, a friendly AI assistant for a kids' riddle game called 'Avery's Riddle Me This?'. 
@@ -165,8 +146,10 @@ def chat_with_ai(user_input, conversation_history):
     AI: """
     
     response = ask_hugging_face(prompt)
-    if response.startswith("⚠️"):
-        return f"Oops, my magic wand is stuck! Try again! {personality['emoji']}"
+    if not check_safety(response, is_input=False):
+        return "⚠️ Oops, my response got a bit too wild! Let's try something else! 😊"
+    
+    # Append emoji based on personality
     return f"{response} {personality['emoji']}"
 
 # -------------------------------
@@ -175,7 +158,7 @@ def chat_with_ai(user_input, conversation_history):
 def generate_riddle(level):
     prompt = f"Generate a {level.lower()}-difficulty riddle for kids. Provide the riddle as a question and the answer separately, formatted as: Question: [riddle] Answer: [answer]. Keep it short and fun."
     response = ask_hugging_face(prompt)
-    if response.startswith("⚠️") or not check_safety(response, is_input=False):
+    if not check_safety(response, is_input=False):
         return random.choice(riddles[level])
     try:
         question = response.split("Answer:")[0].replace("Question:", "").strip()
@@ -195,7 +178,7 @@ def translate_riddle(riddle, language="es"):
     Riddle: {riddle['question']}
     """
     translated_question = ask_hugging_face(prompt)
-    if translated_question.startswith("⚠️") or not check_safety(translated_question, is_input=False):
+    if not check_safety(translated_question, is_input=False):
         return riddle
     return {"question": translated_question, "answer": riddle["answer"]}
 
@@ -337,14 +320,14 @@ if mode == "Solve a riddle":
                     st.session_state.score += 1
                     st.success("🎉 That's correct! Great job!")
                     st.markdown(
-                        f'<audio src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg" autoplay="true"></audio>',
+                        f'<audio src="{SOUND_SUCCESS}" autoplay="true"></audio>',
                         unsafe_allow_html=True
                     )
                     st.balloons()
                 else:
                     st.error("❌ Hmm... that's not quite right. Want a hint?")
                     st.markdown(
-                        f'<audio src="https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg" autoplay="true"></audio>',
+                        f'<audio src="{SOUND_FAILURE}" autoplay="true"></audio>',
                         unsafe_allow_html=True
                     )
 
@@ -353,7 +336,7 @@ if mode == "Solve a riddle":
                 hint_level = "simple" if st.session_state.attempts < 3 else "detailed"
                 prompt = f"Provide a {hint_level} hint for this riddle: {st.session_state.riddle['question']}. Keep it short and child-friendly."
                 hint = ask_hugging_face(prompt)
-                if hint.startswith("⚠️") or not check_safety(hint, is_input=False):
+                if not check_safety(hint, is_input=False):
                     hint = "Think carefully about the words in the riddle! 😊"
                 st.info(f"🧠 Hint: {hint}")
 
@@ -361,7 +344,7 @@ if mode == "Solve a riddle":
             if st.button("🤖 Ask the AI for help"):
                 prompt = f"Help a child solve this riddle:\n\nRiddle: {st.session_state.riddle['question']}\n\nThey guessed: '{user_input}'. How should I help them?"
                 ai_help = ask_hugging_face(prompt)
-                if ai_help.startswith("⚠️") or not check_safety(ai_help, is_input=False):
+                if not check_safety(ai_help, is_input=False):
                     ai_help = "Let's think about the riddle together! What's a key word in it? 😊"
                 st.markdown(f"**AI says:** {ai_help}")
 
@@ -375,7 +358,7 @@ elif mode == "Stump the AI with your own riddle":
             else:
                 prompt = f"A kid gave you this riddle. Try to solve it simply:\n\n{custom_riddle}"
                 ai_answer = ask_hugging_face(prompt)
-                if ai_answer.startswith("⚠️") or not check_safety(ai_answer, is_input=False):
+                if not check_safety(ai_answer, is_input=False):
                     ai_answer = "Hmm, that's a tricky one! Can you give me another riddle? 😊"
                 st.markdown(f"**AI thinks:** {ai_answer}")
         else:
@@ -397,4 +380,4 @@ elif mode == "Chat with AI":
 
 st.markdown("---")
 st.markdown("🗣️ Solve riddles, stump the AI, or chat for fun in the modes above!")
-st.markdown("**Built with Hugging Face** | Created by ijones90002")
+st.markdown("**Built with Meta Llama 3** | Created by ijones90002")
