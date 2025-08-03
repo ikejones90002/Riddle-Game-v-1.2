@@ -4,6 +4,8 @@
         "gtts",
         "huggingface",
         "ijones",
+        "mistralai",
+        "Mixtral",
         "selectbox"
     ]
 }
