@@ -18,8 +18,8 @@ LANGUAGES = {
     "Thai": "th"
 }
 DEFAULT_LLM = "meta-llama/Llama-3.2-3B-Instruct"
-SOUND_SUCCESS = "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
-SOUND_FAILURE = "https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg"
+FALLBACK_LLM = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+SAFETY_LLM = "meta-llama/Llama-Guard-3-8B"
 
 # -------------------------------
 # Riddles Dataset (Static)
@@ -44,14 +44,15 @@ riddles = {
 # -------------------------------
 def check_safety(text, is_input=True):
     prompt = f"""
-    You are a safety classifier for a children's riddle game. Check if the following {'user input' if is_input else 'AI output'} is appropriate for kids (fun, friendly, no inappropriate content). Return 'safe' if appropriate, or 'unsafe' with a brief reason if not.
+    Check if the following {'user input' if is_input else 'AI output'} is appropriate for a children's riddle game (fun, friendly, no inappropriate content). Return 'safe' if appropriate, or 'unsafe' with a brief reason.
     Text: {text}
     """
-    result = ask_hugging_face(prompt, model="meta-llama/Llama-Guard-3-8B")
-    st.write(f"Debug: Safety check result for '{text}': {result}")  # Temporary debug output
-    if result.strip().lower().startswith("safe"):
-        return True
-    return False
+    result = ask_hugging_face(prompt, model=SAFETY_LLM)
+    st.write(f"Debug: Safety check for '{text}' (is_input={is_input}): {result}")  # Debug output
+    if result.startswith("⚠️"):
+        st.warning(f"Debug: Safety check failed due to API error: {result}")
+        return True  # Fallback to safe if API fails
+    return result.strip().lower().startswith("safe")
 
 # -------------------------------
 # Hugging Face API Function
@@ -77,10 +78,11 @@ def ask_hugging_face(prompt, model=DEFAULT_LLM):
         }
     }
     
-    for attempt in range(3):
+    models = [model, FALLBACK_LLM] if model != FALLBACK_LLM else [model]
+    for current_model in models:
         try:
             response = requests.post(
-                f"https://api-inference.huggingface.co/models/{model}",
+                f"https://api-inference.huggingface.co/models/{current_model}",
                 headers=headers,
                 json=payload,
                 timeout=30
@@ -90,31 +92,38 @@ def ask_hugging_face(prompt, model=DEFAULT_LLM):
             
             if isinstance(result, list) and result and "generated_text" in result[0]:
                 text = result[0]["generated_text"].strip()
-                st.write(f"Debug: API response for model {model}: {text}")  # Temporary debug
+                st.write(f"Debug: API response from {current_model}: {text}")  # Debug output
                 return text
             elif isinstance(result, dict) and "generated_text" in result:
                 text = result["generated_text"].strip()
-                st.write(f"Debug: API response for model {model}: {text}")  # Temporary debug
+                st.write(f"Debug: API response from {current_model}: {text}")  # Debug output
                 return text
             elif isinstance(result, dict) and "text" in result:
                 text = result["text"].strip()
-                st.write(f"Debug: API response for model {model}: {text}")  # Temporary debug
+                st.write(f"Debug: API response from {current_model}: {text}")  # Debug output
                 return text
             elif isinstance(result, dict) and "error" in result:
-                st.error(f"Debug: API Error for model {model}: {result['error']}")
-                return f"⚠️ API Error: {result['error']}"
-            else:
-                st.error(f"Debug: Unexpected API response format for model {model}: {result}")
-                return "⚠️ Unexpected response format from Hugging Face API."
-        except requests.exceptions.RequestException as e:
-            if attempt < 2:
-                time.sleep(2 ** attempt)
+                st.error(f"Debug: API Error for {current_model}: {result['error']}")
+                if current_model == models[-1]:
+                    return f"⚠️ API Error: {result['error']}"
                 continue
-            st.error(f"Debug: Failed to connect to Hugging Face API for model {model}: {str(e)}")
-            return f"⚠️ Could not connect to Hugging Face AI: {str(e)}."
+            else:
+                st.error(f"Debug: Unexpected API response format from {current_model}: {result}")
+                if current_model == models[-1]:
+                    return "⚠️ Unexpected response format from Hugging Face API."
+                continue
+        except requests.exceptions.RequestException as e:
+            st.error(f"Debug: Failed to connect to Hugging Face API for {current_model}: {str(e)}")
+            if current_model == models[-1]:
+                return f"⚠️ Could not connect to Hugging Face AI: {str(e)}."
+            time.sleep(2)
+            continue
         except Exception as e:
-            st.error(f"Debug: General error with Hugging Face API for model {model}: {str(e)}")
-            return f"⚠️ An error occurred with the Hugging Face AI: {str(e)}."
+            st.error(f"Debug: General error with Hugging Face API for {current_model}: {str(e)}")
+            if current_model == models[-1]:
+                return f"⚠️ An error occurred with the Hugging Face AI: {str(e)}."
+            continue
+    return "⚠️ All models failed."
 
 # -------------------------------
 # Conversational AI Function
@@ -123,7 +132,6 @@ def chat_with_ai(user_input, conversation_history):
     if not check_safety(user_input):
         return "⚠️ Sorry, that input isn't safe for this game! Try something else! 😊"
     
-    # Define possible AI "personalities" for variety
     personalities = [
         {"name": "Riddle Wizard", "tone": "magical and mysterious", "emoji": "🧙‍♂️"},
         {"name": "Puzzle Pal", "tone": "cheerful and encouraging", "emoji": "😄"},
@@ -131,7 +139,6 @@ def chat_with_ai(user_input, conversation_history):
     ]
     personality = random.choice(personalities)
     
-    # Categorize user input for response type
     user_input_lower = user_input.lower().strip()
     response_type = "general"
     if any(word in user_input_lower for word in ["hint", "help", "clue"]):
@@ -141,7 +148,6 @@ def chat_with_ai(user_input, conversation_history):
     elif any(word in user_input_lower for word in ["good", "great", "awesome"]):
         response_type = "encouragement"
     
-    # Build dynamic prompt based on response type
     riddle = st.session_state.riddle['question'] if st.session_state.riddle else "No riddle selected"
     prompt = f"""
     You are {personality['name']}, a friendly AI assistant for a kids' riddle game called 'Avery's Riddle Me This?'. 
@@ -160,7 +166,7 @@ def chat_with_ai(user_input, conversation_history):
     
     response = ask_hugging_face(prompt)
     if response.startswith("⚠️"):
-        return f"Oops, something went wrong with my magic! Try again! {personality['emoji']}"
+        return f"Oops, my magic wand is stuck! Try again! {personality['emoji']}"
     if not check_safety(response, is_input=False):
         return f"⚠️ My response got too tricky! Let's try something else! {personality['emoji']}"
     
@@ -334,14 +340,14 @@ if mode == "Solve a riddle":
                     st.session_state.score += 1
                     st.success("🎉 That's correct! Great job!")
                     st.markdown(
-                        f'<audio src="{SOUND_SUCCESS}" autoplay="true"></audio>',
+                        f'<audio src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg" autoplay="true"></audio>',
                         unsafe_allow_html=True
                     )
                     st.balloons()
                 else:
                     st.error("❌ Hmm... that's not quite right. Want a hint?")
                     st.markdown(
-                        f'<audio src="{SOUND_FAILURE}" autoplay="true"></audio>',
+                        f'<audio src="https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg" autoplay="true"></audio>',
                         unsafe_allow_html=True
                     )
 
