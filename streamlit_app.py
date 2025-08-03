@@ -108,15 +108,49 @@ def ask_hugging_face(prompt, model=DEFAULT_LLM):
 # -------------------------------
 def chat_with_ai(user_input, conversation_history):
     if not check_safety(user_input):
-        return "⚠️ Sorry, that input isn't safe for this game! Try something else. 😊"
+        return "⚠️ Sorry, that input isn't safe for this game! Try something else! 😊"
+    
+    # Define possible AI "personalities" for variety
+    personalities = [
+        {"name": "Riddle Wizard", "tone": "magical and mysterious", "emoji": "🧙‍♂️"},
+        {"name": "Puzzle Pal", "tone": "cheerful and encouraging", "emoji": "😄"},
+        {"name": "Brainy Buddy", "tone": "smart and curious", "emoji": "🧠"}
+    ]
+    personality = random.choice(personalities)
+    
+    # Categorize user input for response type
+    user_input_lower = user_input.lower().strip()
+    response_type = "general"
+    if any(word in user_input_lower for word in ["hint", "help", "clue"]):
+        response_type = "hint"
+    elif any(word in user_input_lower for word in ["why", "what", "how"]):
+        response_type = "explanation"
+    elif any(word in user_input_lower for word in ["good", "great", "awesome"]):
+        response_type = "encouragement"
+    
+    # Build dynamic prompt based on response type
+    riddle = st.session_state.riddle['question'] if st.session_state.riddle else "No riddle selected"
     prompt = f"""
-    You are a friendly AI assistant for a kids' riddle game called 'Avery's Riddle Me This?'. Respond in a fun, simple, and child-friendly way. Use emojis and keep answers short. The current riddle is: '{st.session_state.riddle['question'] if st.session_state.riddle else 'No riddle selected'}'. The conversation so far: {conversation_history}
+    You are {personality['name']}, a friendly AI assistant for a kids' riddle game called 'Avery's Riddle Me This?'. 
+    Respond in a {personality['tone']} tone, using emojis like {personality['emoji']} and keeping answers short (1-2 sentences). 
+    The current riddle is: '{riddle}'.
+    The conversation so far: {conversation_history}
     User: {user_input}
+    
+    Based on the user's input:
+    - If they ask for a hint or help, give a short clue about the riddle.
+    - If they ask a question (e.g., why, what, how), explain something fun related to the riddle or game.
+    - If they say something positive (e.g., good, awesome), respond with encouragement.
+    - Otherwise, reply with a fun, engaging comment related to the riddle or game.
+    
     AI: """
+    
     response = ask_hugging_face(prompt)
     if not check_safety(response, is_input=False):
-        return "⚠️ The AI's response couldn't be shown. Let's try something else! 😊"
-    return response
+        return "⚠️ Oops, my response got a bit too wild! Let's try something else! 😊"
+    
+    # Append emoji based on personality
+    return f"{response} {personality['emoji']}"
 
 # -------------------------------
 # Dynamic Riddle Generation
