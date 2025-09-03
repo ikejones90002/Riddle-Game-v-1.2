@@ -184,5 +184,5 @@ elif mode == "🙃 Stump Your Friends":
                 st.error("Nope, try again or ask for a hint!")
 
 st.markdown("---")
-st.markdown("**Built for Fun** | Created by ijones90002")
+st.markdown("2025 &copy; 103 Software Solutions LLC")
 st.markdown("🎉 Keep playing to discover more riddles, win streak trophies, and become a riddle master!")
